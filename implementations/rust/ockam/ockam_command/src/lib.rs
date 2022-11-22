@@ -29,7 +29,7 @@ mod util;
 mod vault;
 mod version;
 
-use anyhow::Context;
+use anyhow::Context as _;
 use authenticated::AuthenticatedCommand;
 use completion::CompletionCommand;
 use configuration::ConfigurationCommand;
@@ -384,7 +384,10 @@ impl OckamCommand {
             OckamSubcommand::EnableAwsKms => {
                 options.config.enable_aws_kms(true);
                 if let Err(e) = options.config.persist_config_updates() {
-                    eprintln!("Failed to persist config file: {:?}", anyhow::Error::from(e));
+                    eprintln!(
+                        "Failed to persist config file: {:?}",
+                        anyhow::Error::from(e)
+                    );
                     std::process::exit(exitcode::IOERR)
                 }
             }
