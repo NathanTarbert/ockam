@@ -194,6 +194,11 @@ impl Route {
     pub fn iter(&self) -> impl Iterator<Item = &Address> {
         self.inner.iter()
     }
+
+    /// Number of hops
+    pub fn len(&self) -> usize {
+        self.inner.len()
+    }
 }
 
 impl Display for Route {
