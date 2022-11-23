@@ -3,8 +3,9 @@ use ockam_core::compat::net::SocketAddr;
 use ockam_core::{
     async_trait,
     compat::{boxed::Box, sync::Arc},
+    DenyAll,
 };
-use ockam_core::{AccessControl, Address, Mailbox, Mailboxes, Processor, Result, Route};
+use ockam_core::{AccessControl, Address, Mailboxes, Processor, Result, Route};
 use ockam_node::{Context, ProcessorBuilder};
 use ockam_transport_core::TransportError;
 use tokio::net::TcpListener;
@@ -49,17 +50,12 @@ impl TcpInletListenProcessor {
             // router_address,
         };
 
-        // TODO: @ac 0#TcpInletListenProcessor
-        // in:  n/a
-        // out: n/a
-        let mailbox = Mailbox::new(
-            waddr.clone(),
-            access_control,
-            Arc::new(ockam_core::AllowAll),
-        );
-        ProcessorBuilder::with_mailboxes(Mailboxes::new(mailbox, vec![]), processor)
-            .start(ctx)
-            .await?;
+        ProcessorBuilder::with_mailboxes(
+            Mailboxes::main(waddr.clone(), Arc::new(DenyAll), Arc::new(DenyAll)),
+            processor,
+        )
+        .start(ctx)
+        .await?;
 
         Ok((waddr, saddr))
     }
