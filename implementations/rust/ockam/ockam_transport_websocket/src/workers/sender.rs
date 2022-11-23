@@ -59,8 +59,8 @@ impl WorkerPair {
 
         // TODO: @ac
         let mailboxes = Mailboxes::new(
-            Mailbox::allow_all(tx_addr.clone()),
-            vec![Mailbox::allow_all(internal_addr)],
+            Mailbox::deny_all(tx_addr.clone()),
+            vec![Mailbox::deny_all(internal_addr)],
         );
         WorkerBuilder::with_mailboxes(mailboxes, sender)
             .start(ctx)
@@ -95,8 +95,8 @@ impl WorkerPair {
         let tx_addr = Address::random_local();
         // TODO: @ac
         let mailboxes = Mailboxes::new(
-            Mailbox::allow_all(tx_addr.clone()),
-            vec![Mailbox::allow_all(internal_addr)],
+            Mailbox::deny_all(tx_addr.clone()),
+            vec![Mailbox::deny_all(internal_addr)],
         );
         WorkerBuilder::with_mailboxes(mailboxes, sender)
             .start(ctx)
