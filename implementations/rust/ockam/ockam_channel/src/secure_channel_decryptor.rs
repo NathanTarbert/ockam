@@ -2,12 +2,13 @@ use crate::{
     ChannelKeys, CreateResponderChannelMessage, KeyExchangeCompleted, Role, SecureChannelEncryptor,
     SecureChannelError, SecureChannelKeyExchanger, SecureChannelLocalInfo, SecureChannelVault,
 };
+use ockam_core::compat::sync::Arc;
 use ockam_core::compat::{boxed::Box, string::String, vec::Vec};
-use ockam_core::{async_trait, route};
+use ockam_core::{async_trait, route, AllowAll, LocalDestinationOnly, Mailboxes};
 use ockam_core::{
     Address, Any, Decodable, LocalMessage, Result, Route, Routed, TransportMessage, Worker,
 };
-use ockam_node::Context;
+use ockam_node::{Context, WorkerBuilder};
 use tracing::{debug, info};
 
 struct DecryptorReadyState {
@@ -19,6 +20,10 @@ struct DecryptorReadyState {
 pub struct SecureChannelDecryptor<V: SecureChannelVault, K: SecureChannelKeyExchanger> {
     role: Role,
     key_exchanger: Option<K>,
+    // Used to talk to the other side of the channel
+    remote_address: Address,
+    // Used to send decrypted messages to the workers on our node
+    internal_address: Address,
     /// Optional address to which message is sent after SecureChannel is created
     key_exchange_completed_callback_route: Option<Address>,
     state: Option<DecryptorReadyState>,
@@ -31,6 +36,8 @@ pub struct SecureChannelDecryptor<V: SecureChannelVault, K: SecureChannelKeyExch
 impl<V: SecureChannelVault, K: SecureChannelKeyExchanger> SecureChannelDecryptor<V, K> {
     pub(crate) async fn new_initiator(
         key_exchanger: K,
+        remote_address: Address,
+        internal_address: Address,
         // Optional address to which message is sent after SecureChannel is created
         key_exchange_completed_callback_route: Option<Address>,
         remote_route: Route,
@@ -41,6 +48,8 @@ impl<V: SecureChannelVault, K: SecureChannelKeyExchanger> SecureChannelDecryptor
         Ok(Self {
             role: Role::Initiator,
             key_exchanger: Some(key_exchanger),
+            remote_address,
+            internal_address,
             key_exchange_completed_callback_route,
             remote_route,
             custom_payload,
@@ -53,6 +62,8 @@ impl<V: SecureChannelVault, K: SecureChannelKeyExchanger> SecureChannelDecryptor
     /// New responder
     pub async fn new_responder(
         key_exchanger: K,
+        remote_address: Address,
+        internal_address: Address,
         // Optional address to which message is sent after SecureChannel is created
         key_exchange_completed_callback_route: Option<Address>,
         vault: V,
@@ -60,6 +71,8 @@ impl<V: SecureChannelVault, K: SecureChannelKeyExchanger> SecureChannelDecryptor
         let key_exchange_name = key_exchanger.name().await?;
         Ok(Self {
             role: Role::Responder,
+            remote_address,
+            internal_address,
             key_exchanger: Some(key_exchanger),
             key_exchange_completed_callback_route,
             remote_route: route![],
@@ -137,7 +150,8 @@ impl<V: SecureChannelVault, K: SecureChannelKeyExchanger> SecureChannelDecryptor
 
         let local_msg = LocalMessage::new(transport_message, vec![local_info.to_local_info()?]);
 
-        ctx.forward(local_msg).await
+        ctx.forward_from_address(local_msg, self.internal_address.clone())
+            .await
     }
 
     async fn handle_key_exchange(
@@ -194,7 +208,16 @@ impl<V: SecureChannelVault, K: SecureChannelKeyExchanger> SecureChannelDecryptor
             self.remote_route.clone(),
             self.vault.async_try_clone().await?,
         );
-        ctx.start_worker(address_local.clone(), encryptor).await?;
+        WorkerBuilder::with_mailboxes(
+            Mailboxes::main(
+                address_local.clone(),
+                Arc::new(LocalDestinationOnly),
+                Arc::new(AllowAll), /* FIXME: @ac */
+            ),
+            encryptor,
+        )
+        .start(ctx)
+        .await?;
 
         info!(
             "Started SecureChannel {} at local: {}, remote: {}",
@@ -205,9 +228,10 @@ impl<V: SecureChannelVault, K: SecureChannelKeyExchanger> SecureChannelDecryptor
 
         // Notify interested worker about finished key exchange
         if let Some(r) = self.key_exchange_completed_callback_route.take() {
-            ctx.send(
+            ctx.send_from_address(
                 r,
                 KeyExchangeCompleted::new(address_local.clone(), *keys.h()),
+                self.internal_address.clone(),
             )
             .await?;
         }
@@ -248,12 +272,16 @@ impl<V: SecureChannelVault, K: SecureChannelKeyExchanger> Worker for SecureChann
         ctx: &mut Self::Context,
         msg: Routed<Self::Message>,
     ) -> Result<()> {
-        if self.state.is_some() {
-            self.handle_decrypt(ctx, msg).await?;
-        } else if self.key_exchanger.is_some() {
-            self.handle_key_exchange(ctx, msg).await?;
-        } else {
-            return Err(SecureChannelError::InvalidInternalState.into());
+        let msg_addr = msg.msg_addr();
+
+        if msg_addr == self.remote_address {
+            if self.state.is_some() {
+                self.handle_decrypt(ctx, msg).await?;
+            } else if self.key_exchanger.is_some() {
+                self.handle_key_exchange(ctx, msg).await?;
+            } else {
+                return Err(SecureChannelError::InvalidInternalState.into());
+            }
         }
 
         Ok(())
