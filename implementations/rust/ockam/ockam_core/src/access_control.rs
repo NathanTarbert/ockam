@@ -77,11 +77,16 @@ pub struct AllowDestinationAddress(pub Address);
 #[async_trait]
 impl AccessControl for AllowDestinationAddress {
     async fn is_authorized(&self, relay_msg: &RelayMessage) -> Result<bool> {
-        if relay_msg.destination == self.0 {
-            crate::allow()
-        } else {
-            crate::deny()
+        let onward_route = &relay_msg.onward;
+
+        // Check if next hop is equal to expected value. Further hops are not checked
+        if onward_route.next()? != &self.0 {
+            return crate::deny();
         }
+
+        crate::allow()
+    }
+}
     }
 }
 
