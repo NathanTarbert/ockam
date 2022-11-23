@@ -11,9 +11,6 @@ mod listener;
 mod receiver;
 mod sender;
 
-#[cfg(test)]
-mod tests;
-
 use crate::{
     pipe2::{
         listener::PipeListener,
