@@ -70,6 +70,21 @@ impl AccessControl for AllowSourceAddress {
     }
 }
 
+/// An Access Control type that allows messages from the given source address to go through
+#[derive(Debug)]
+pub struct AllowSourceAddresses(pub Vec<Address>);
+
+#[async_trait]
+impl AccessControl for AllowSourceAddresses {
+    async fn is_authorized(&self, relay_msg: &RelayMessage) -> Result<bool> {
+        if self.0.contains(&relay_msg.source) {
+            crate::allow()
+        } else {
+            crate::deny()
+        }
+    }
+}
+
 /// An Access Control type that allows messages to the given destination address to go through
 #[derive(Debug)]
 pub struct AllowDestinationAddress(pub Address);
@@ -81,6 +96,24 @@ impl AccessControl for AllowDestinationAddress {
 
         // Check if next hop is equal to expected value. Further hops are not checked
         if onward_route.next()? != &self.0 {
+            return crate::deny();
+        }
+
+        crate::allow()
+    }
+}
+
+/// An Access Control type that allows messages to the given destination address to go through
+#[derive(Debug)]
+pub struct AllowDestinationAddresses(pub Vec<Address>);
+
+#[async_trait]
+impl AccessControl for AllowDestinationAddresses {
+    async fn is_authorized(&self, relay_msg: &RelayMessage) -> Result<bool> {
+        let onward_route = &relay_msg.onward;
+
+        // Check if next hop is equal to expected value. Further hops are not checked
+        if !self.0.contains(onward_route.next()?) {
             return crate::deny();
         }
 
