@@ -25,7 +25,8 @@ publish = true
 rust-version = "1.56.0"
 
 [features]
-default = ["std"]
+default = ["std", "debugger"] # FIXME Don't merge this
+
 
 # Feature (enabled by default): "std" enables functionality expected to
 # be available on a standard platform.
